@@ -445,6 +445,9 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
   let previousLoading: boolean | undefined
   let transitionTimer: ReturnType<typeof setTimeout> | undefined
 
+  // Solid 2 treats signal writes from render-effect callbacks as owned-scope
+  // writes. Use the regular effect so its apply phase is the supported
+  // imperative/writable scope for transition state updates.
   createEffect(
     () => ({
       loading: props.loading,
@@ -454,7 +457,11 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
     state => {
       if (previousLoading === undefined) {
         previousLoading = state.loading
+        // Capture the initial loading state without reading the reactive prop
+        // untracked in the component body.
         setKeepOverlay(state.loading)
+        // Gate the default keepOverlay=true until the initial state is known,
+        // preventing an overlay flash when the component starts idle.
         setInitialized(true)
         return
       }
