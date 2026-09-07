@@ -187,6 +187,7 @@ function resolveDuration(value: number | boolean | undefined, enabledMs: number)
 
 interface EnvironmentState {
   rootRef: (element: HTMLDivElement | null) => void
+  contentRef: (element: HTMLDivElement | null) => void
   containerWidth: () => number
   containerHeight: () => number
   viewportWidth: () => number
@@ -199,23 +200,28 @@ function createEnvironmentState(): EnvironmentState {
   const [viewportWidth, setViewportWidth] = createSignal(0)
   const [isDark, setIsDark] = createSignal(false)
   let root: HTMLDivElement | undefined
+  let content: HTMLDivElement | undefined
 
   const rootRef = (element: HTMLDivElement | null) => {
     root = element ?? undefined
+  }
+  const contentRef = (element: HTMLDivElement | null) => {
+    content = element ?? undefined
   }
 
   onSettled(() => {
     if (typeof window === 'undefined' || typeof document === 'undefined' || !root) return
 
-    const updateRect = (rect: { width: number; height: number }) => {
-      setContainerWidth(Math.round(rect.width || 0))
-      if (rect.height > 0) setContainerHeight(Math.round(rect.height))
+    // The root may be held by the skeleton's reserved min-height. Measure the
+    // content wrapper so that artificial height never becomes the next height.
+    const measureLayout = (width?: number) => {
+      if (!root) return
+      setContainerWidth(Math.round((width ?? root.getBoundingClientRect().width) || 0))
+      if (content) setContainerHeight(Math.round(content.getBoundingClientRect().height || 0))
     }
     const measure = () => {
-      if (!root) return
-      const rect = root.getBoundingClientRect()
+      measureLayout()
       setViewportWidth(Math.round(window.innerWidth || 0))
-      updateRect(rect)
     }
     const updateDark = () => {
       setIsDark(
@@ -231,8 +237,7 @@ function createEnvironmentState(): EnvironmentState {
     if (typeof ResizeObserver !== 'undefined') {
       try {
         resizeObserver = new ResizeObserver(entries => {
-          const rect = entries[0]?.contentRect
-          if (rect) updateRect(rect)
+          measureLayout(entries[0]?.contentRect.width)
           setViewportWidth(Math.round(window.innerWidth || 0))
         })
         resizeObserver.observe(root)
@@ -259,7 +264,7 @@ function createEnvironmentState(): EnvironmentState {
     }
   })
 
-  return { rootRef, containerWidth, containerHeight, viewportWidth, isDark }
+  return { rootRef, contentRef, containerWidth, containerHeight, viewportWidth, isDark }
 }
 
 interface BoneOverlayProps {
@@ -420,11 +425,14 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
     props.initialBones ?? (props.name ? getRegisteredBones(props.name) : undefined),
   )
   const effectiveSelect = createMemo(() => props.select ?? globalConfig.select ?? 'container')
-  const resolveWidth = createMemo(() =>
-    effectiveSelect() === 'viewport'
-      ? (environment.viewportWidth() > 0 ? environment.viewportWidth() : environment.containerWidth())
-      : (environment.containerWidth() > 0 ? environment.containerWidth() : environment.viewportWidth()),
-  )
+  const resolveWidth = createMemo(() => {
+    if (effectiveSelect() === 'viewport') {
+      return environment.viewportWidth() > 0
+        ? environment.viewportWidth()
+        : typeof window !== 'undefined' ? Math.round(window.innerWidth || 0) : 0
+    }
+    return environment.containerWidth()
+  })
   const activeBones = createMemo(() =>
     resolveArtifact(effectiveBones(), resolveWidth()),
   )
@@ -533,6 +541,7 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
       data-boneyard-config={serializedSnapshotConfig()}
     >
       <div
+        ref={environment.contentRef}
         data-boneyard-content="true"
         style={{ visibility: hideContent() ? 'hidden' : undefined }}
       >
@@ -568,11 +577,14 @@ export function SkeletonView(props: SkeletonViewProps): JSX.Element {
     props.initialBones ?? (props.name ? getRegisteredBones(props.name) : undefined),
   )
   const effectiveSelect = createMemo(() => props.select ?? globalConfig.select ?? 'container')
-  const resolveWidth = createMemo(() =>
-    effectiveSelect() === 'viewport'
-      ? (environment.viewportWidth() > 0 ? environment.viewportWidth() : environment.containerWidth())
-      : (environment.containerWidth() > 0 ? environment.containerWidth() : environment.viewportWidth()),
-  )
+  const resolveWidth = createMemo(() => {
+    if (effectiveSelect() === 'viewport') {
+      return environment.viewportWidth() > 0
+        ? environment.viewportWidth()
+        : typeof window !== 'undefined' ? Math.round(window.innerWidth || 0) : 0
+    }
+    return environment.containerWidth()
+  })
   const activeBones = createMemo(() =>
     resolveArtifact(effectiveBones(), resolveWidth()),
   )
