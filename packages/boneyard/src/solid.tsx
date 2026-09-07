@@ -2,8 +2,8 @@
 
 import {
   For,
+  createEffect,
   createMemo,
-  createRenderEffect,
   createSignal,
   createUniqueId,
   onSettled,
@@ -440,11 +440,12 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
   // Keep the same overlay mounted while it fades out. The loading prop can
   // update before an effect applies the transition state, so the extra bit
   // prevents a one-commit unmount/remount.
-  const [keepOverlay, setKeepOverlay] = createSignal(props.loading)
+  const [keepOverlay, setKeepOverlay] = createSignal(true)
+  const [initialized, setInitialized] = createSignal(false)
   let previousLoading: boolean | undefined
   let transitionTimer: ReturnType<typeof setTimeout> | undefined
 
-  createRenderEffect(
+  createEffect(
     () => ({
       loading: props.loading,
       transitionMs: transitionMs(),
@@ -453,6 +454,8 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
     state => {
       if (previousLoading === undefined) {
         previousLoading = state.loading
+        setKeepOverlay(state.loading)
+        setInitialized(true)
         return
       }
 
@@ -487,7 +490,7 @@ export function Skeleton(props: SkeletonProps): JSX.Element {
   })
 
   const showOverlay = createMemo(() =>
-    !!activeBones() && (props.loading || keepOverlay()),
+    !!activeBones() && (props.loading || (initialized() && keepOverlay())),
   )
   const showFallback = createMemo(() =>
     props.loading && !activeBones() && !isTransitioning(),
